@@ -56,12 +56,19 @@ int main() {
     std::map<std::pair<int, int>, std::vector<int>> temp_bin;
     tie(temp_contour, temp_bin) = trainTemplate(images[idxOfTemp], threshold, distance_thresh);
 
+    /*
+    RectangleRoi ROI(300, 300, 200, 100, 20);
+    std::vector<cv::Point2d> rec = ROI.getVertices();
+    compareContour(temp_contour, temp_bin, images[1], rec, threshold, distance_thresh);
+    */
+
+    
     std::vector<std::vector<std::vector<cv::Point2f>>> pos_list;
     for (size_t i = 0; i < list_image.size(); ++i) {
         if (i != idxOfTemp) {
             std::vector<cv::Point2f> pos_1, pos_2;
 
-            RectangleRoi ROI(200, 200, 500, 600, 20);
+            RectangleRoi ROI(300, 300, 200, 100, 20);
             std::vector<cv::Point2d> rec = ROI.getVertices();
             //std::vector<std::pair<cv::Point2f, double>> pos_1, pos_2;
             //std::vector<cv::Point2d> rec = { cv::Point2d(100, 500), cv::Point2d(500, 100), cv::Point2d(900, 500), cv::Point2d(500, 900) };
@@ -72,12 +79,14 @@ int main() {
     std::cout << "Enter: ";
     int k ;
     std::cin >> k;
-    std::cout << pos_list[k][0] << pos_list[k][1] << "\n";
+    //std::cout << pos_list[k][0] << pos_list[k][1] << "\n";
+    std::cout << pos_list[k][1] ;
 
     while (k >= 0) {
         std::cin >> k;
         std::cout << pos_list[k][0] << pos_list[k][1] << "\n";
     }
+    
 
     return 0;
 };
