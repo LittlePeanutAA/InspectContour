@@ -9,6 +9,12 @@
 #include <algorithm>
 #include <sys/stat.h>
 
+class errorPoint
+{
+public:
+    cv::Point2f point;
+    double distance;
+};
 
 // Define function - extract contour and divide points into bins
 std::vector<cv::Point>
@@ -46,48 +52,15 @@ devide_bin(std::vector<cv::Point> contour, int stride) {
     return bin;
 }
 
-
-
 // Define trainTemplate function:
-std::pair<std::vector<cv::Point>, std::map<std::pair<int, int>, std::vector<int>>>
-trainTemplate(const cv::Mat& temp_img, double threshold, int distance_thresh) {
-    int patch_size = 2 * distance_thresh;
+std::pair< std::vector<cv::Point>, std::vector<int> >
+trainTemplate(const cv::Mat& temp_img, double threshold) {
     std::vector<cv::Point> temp_contour = extract_contour(temp_img, threshold);
-    std::map < std::pair<int, int>, std::vector<int> > temp_bin = devide_bin(temp_contour, patch_size);
+    int height = temp_img.rows;
+    int width = temp_img.cols;
 
-    return { temp_contour, temp_bin };
+    return { temp_contour, {width, height} };
 }
-
-
-// Crop image from 4 corner points
-/*
-cv::Mat
-four_point_transform(cv::Mat image, std::vector<cv::Point2d> rect) {
-    cv::Point2f tl = cv::Point2f(rect[0]);
-    cv::Point2f tr = cv::Point2f(rect[1]);
-    cv::Point2f br = cv::Point2f(rect[2]);
-    cv::Point2f bl = cv::Point2f(rect[3]);
-
-    float widthA = std::sqrt(std::pow(br.x - bl.x, 2) + std::pow(br.y - bl.y, 2));
-    float widthB = std::sqrt(std::pow(tr.x - tl.x, 2) + std::pow(tr.y - tl.y, 2));
-    int maxWidth = std::max(static_cast<int>(widthA), static_cast<int>(widthB));
-
-    float heightA = std::sqrt(std::pow(tr.x - br.x, 2) + std::pow(tr.y - br.y, 2));
-    float heightB = std::sqrt(std::pow(tl.x - bl.x, 2) + std::pow(tl.y - bl.y, 2));
-    int maxHeight = std::max(static_cast<int>(heightA), static_cast<int>(heightB));
-
-    //cv::Mat dst = (cv::Mat_<int>(4, 2) << 0, 0, maxWidth - 1, 0, maxWidth - 1, maxHeight - 1, 0, maxHeight - 1);
-    std::vector<cv::Point2f> dst = { cv::Point2f(0, 0), cv::Point2f(maxWidth - 1, 0), cv::Point2f(maxWidth - 1, maxHeight - 1), cv::Point2f(0, maxHeight - 1) };
-    std::vector<cv::Point2f> new_rect = { tl, tr, br, bl };
-
-    cv::Mat M = cv::getPerspectiveTransform(new_rect, dst);
-    cv::Mat warped;
-    cv::warpPerspective(image, warped, M, cv::Size(maxWidth, maxHeight));
-
-    return warped;
-}
-*/
-
 
 // Convert coordinate for error point:
 cv::Point convert_coor(cv::Point point, cv::Mat convert_mat) {
@@ -95,65 +68,42 @@ cv::Point convert_coor(cv::Point point, cv::Mat convert_mat) {
     x = point.x;
     y = point.y;
     // Formula:
-    x_ = x * convert_mat.at<double>(0, 0) + y * convert_mat.at<double>(0, 1) + convert_mat.at<double>(0, 2);
-    y_ = x * convert_mat.at<double>(1, 0) + y * convert_mat.at<double>(1, 1) + convert_mat.at<double>(1, 2);
+    x_ = round( x * convert_mat.at<double>(0, 0) + y * convert_mat.at<double>(0, 1) + convert_mat.at<double>(0, 2) );
+    y_ = round( x * convert_mat.at<double>(1, 0) + y * convert_mat.at<double>(1, 1) + convert_mat.at<double>(1, 2) );
     return cv::Point(x_, y_);
 }
-
-/*
-void compareContour(const std::vector<cv::Point>& temp_contour, std::map<std::pair<int, int>, std::vector<int>> temp_bin, const cv::Mat& targ_img, std::vector<cv::Point2d> rect, double threshold, int distance_thresh) {
-    auto start = std::chrono::high_resolution_clock::now();
-
-    // Sinh ra ma trận chuyển từ các cặp điểm trong rect: convert_mat biến đổi toạ độ từ targ_img lớn sang targ_img nhỏ, inv_convert_mat ngược lại
-    int height = targ_img.rows;
-    int width = targ_img.cols;
-    std::vector<cv::Point2f> src = { cv::Point2f(0, 0), cv::Point2f(width - 1, 0), cv::Point2f(0, height - 1) };
-    std::vector<cv::Point2f> dst = { cv::Point2f(rect[0]), cv::Point2f(rect[1]), cv::Point2f(rect[3]) };
-    cv::Mat convert_mat = cv::getAffineTransform(src, dst);
-    cv::Mat inv_convert_mat = cv::getAffineTransform(dst, src);
-    std::cout << inv_convert_mat;
-}
-*/
 
 
 // Define compareContour function:
 std::pair<std::vector<cv::Point2f>, std::vector<cv::Point2f>>
-compareContour(const std::vector<cv::Point>& temp_contour, std::map<std::pair<int, int>, std::vector<int>> temp_bin, const cv::Mat& targ_img, std::vector<cv::Point2d> rect, double threshold, int distance_thresh) {
+compareContour(const std::vector<cv::Point>& temp_contour, std::vector<int> temp_size, const cv::Mat& targ_img, std::vector<cv::Point2i> rect, double threshold, int distance_thresh) {
     auto start = std::chrono::high_resolution_clock::now();
-
-    // Sinh ra ma trận chuyển từ các cặp điểm trong rect: convert_mat biến đổi toạ độ từ targ_img lớn sang targ_img nhỏ, inv_convert_mat ngược lại
-    int height = targ_img.rows;
-    int width = targ_img.cols;
-    std::vector<cv::Point2f> src = { cv::Point2f(0, 0), cv::Point2f(width - 1, 0), cv::Point2f(0, height - 1) };
+    int width = temp_size[0] - 1, height = temp_size[1] - 1;
+    std::vector<cv::Point2f> src = { cv::Point2f(0, 0), cv::Point2f(width, 0), cv::Point2f(0, height) };
     std::vector<cv::Point2f> dst = { cv::Point2f(rect[0]), cv::Point2f(rect[1]), cv::Point2f(rect[3]) };
     cv::Mat convert_mat = cv::getAffineTransform(src, dst);
-    cv::Mat inv_convert_mat = cv::getAffineTransform(dst, src);
 
+    // Convert coor of template contour:
+    std::vector<cv::Point> converted_temp_contour;
+    for (const cv::Point& point : temp_contour) {
+        converted_temp_contour.push_back(cv::Point2f(convert_coor(point, convert_mat)));
+    }
+
+    // Divide bin:
     int patch_size = 2 * distance_thresh;
-
-    // Find contour and divide points into bins
     std::vector<cv::Point> targ_contour = extract_contour(targ_img, threshold);
-    
-    std::vector<cv::Point> converted_targ_contour; 
-    std::vector<cv::Point2f> pos_1, pos_2;
-    double min_distance;
+    std::map < std::pair<int, int>, std::vector<int> > temp_bin = devide_bin(converted_temp_contour, patch_size),
+        targ_bin = devide_bin(targ_contour, patch_size);
 
-    // Calculate distance 1 - from targ to temp
-    //std::vector<double> distance_1(targ_contour.size());
-    for (int i = 0; i < targ_contour.size(); i++) {
-        const cv::Point& point = targ_contour[i];   // Chạy lần lượt các điểm thuộc targ_contour
-        
-        cv::Point targ_pnt = convert_coor(point, convert_mat);
-        converted_targ_contour.push_back(cv::Point2f(targ_pnt));
-        
-        int x = targ_pnt.x / patch_size;
-        int y = targ_pnt.y / patch_size;   // Lẩy chỉ số của bin chứa điểm đang xét
-        
-        // Lấy chỉ số của 3 bin lân cận cần xét
-        int k1 = (targ_pnt.x % patch_size >= distance_thresh) ? 1 : -1;
-        int k2 = (targ_pnt.y % patch_size >= distance_thresh) ? 1 : -1;
+    //Calculate distance and give defect position
+    std::vector<cv::Point2f> targ_output, temp_output;
+
+    // Calculate distance from target contour to template contour
+    for (const cv::Point& point : targ_contour) {
+        int x = point.x / patch_size, y = point.y / patch_size;   // Lẩy chỉ số của bin chứa điểm đang xét
+        int k1 = (point.x % patch_size >= distance_thresh) ? 1 : -1, k2 = (point.y % patch_size >= distance_thresh) ? 1 : -1; // Lấy chỉ số của 3 bin lân cận cần xét
+
         std::vector<std::pair<int, int>> key_vec{ {x, y}, {x + k1, y}, {x, y + k2}, {x + k1, y + k2} };
-        
         // Tạo list gồm các index trong các bin
         std::vector<int> idx_list;
         for (const auto& k : key_vec) {
@@ -161,33 +111,28 @@ compareContour(const std::vector<cv::Point>& temp_contour, std::map<std::pair<in
                 idx_list.insert(idx_list.end(), temp_bin[k].begin(), temp_bin[k].end());
             }
         }
+
         if (idx_list.size() != 0) {     // Nếu list không rỗng, ta tính toán với các điểm trong list
-            min_distance = std::numeric_limits<double>::max();
+            double min_distance = std::numeric_limits<double>::max();
+
             for (const auto& idx : idx_list) {
-                double distance = std::abs(temp_contour[idx].x - targ_pnt.x) + std::abs(temp_contour[idx].y - targ_pnt.y);
+                double distance = std::abs(converted_temp_contour[idx].x - point.x) + std::abs(converted_temp_contour[idx].y - point.y);
                 min_distance = std::min(min_distance, distance);
             }
-            //distance_1[i] = min_distance;
+            if (min_distance > distance_thresh) {
+                targ_output.push_back(cv::Point2f(point));
+            }
         }
         else {        // Nếu list rỗng, ta đưa mức khoảng cách về ngưỡng lỗi
-            //distance_1[i] = distance_thresh + 1;
-            min_distance = distance_thresh + 1;
-        }
-
-        if (min_distance > distance_thresh) {
-            pos_1.push_back(cv::Point2f(targ_contour[i]));
+            targ_output.push_back(cv::Point2f(point));
         }
     }
-    
-    // Calculate distance 2
-    //std::vector<double> distance_2(temp_contour.size());
-    std::map<std::pair<int, int>, std::vector<int>> targ_bin = devide_bin(converted_targ_contour, patch_size);
-    for (int i = 0; i < temp_contour.size(); i++) {
-        const cv::Point& point = temp_contour[i];
-        int x = point.x / patch_size;
-        int y = point.y / patch_size;
-        int k1 = (point.x % patch_size >= distance_thresh) ? 1 : -1;
-        int k2 = (point.y % patch_size >= distance_thresh) ? 1 : -1;
+
+    // Calculate distance from coverted template contour to target contour
+    for (const cv::Point& point : converted_temp_contour) {
+        int x = point.x / patch_size, y = point.y / patch_size;
+        int k1 = (point.x % patch_size >= distance_thresh) ? 1 : -1, k2 = (point.y % patch_size >= distance_thresh) ? 1 : -1;
+
         std::vector<std::pair<int, int>> key_vec{ {x, y}, {x + k1, y}, {x, y + k2}, {x + k1, y + k2} };
         std::vector<int> idx_list;
         for (const auto& k : key_vec) {
@@ -197,31 +142,123 @@ compareContour(const std::vector<cv::Point>& temp_contour, std::map<std::pair<in
         }
 
         if (idx_list.size() != 0) {
-            min_distance = std::numeric_limits<double>::max();
-            int min_index = 0;
+            double min_distance = std::numeric_limits<double>::max();
             for (const auto& idx : idx_list) {
-                double distance = std::abs(converted_targ_contour[idx].x - point.x) + std::abs(converted_targ_contour[idx].y - point.y);
-                if (distance < min_distance) {
-                    min_distance = distance;
-                    min_index = idx;
-                }
+                double distance = std::abs(targ_contour[idx].x - point.x) + std::abs(targ_contour[idx].y - point.y);
+                min_distance = std::min(min_distance, distance);
             }
-            //distance_2[i] = min_distance;
             if (min_distance > distance_thresh) {
-                pos_2.push_back(cv::Point2f(targ_contour[min_index]));
+                targ_output.push_back(cv::Point2f(point));
             }
         }
-        else {
-            //distance_2[i] = distance_thresh + 1;
-            min_distance = distance_thresh + 1;
-            pos_2.push_back(cv::Point2f(convert_coor(temp_contour[i], inv_convert_mat)));
+        else {  
+            targ_output.push_back(cv::Point2f(point));
         }
     }
-    
+
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
     std::cout << elapsed.count() << std::endl;
-    
-    return { pos_1, pos_2 };
-    
+
+    return { targ_output, temp_output };
 }
+
+
+/*
+std::pair<std::vector<errorPoint>, std::vector<errorPoint>> 
+compareContour(const std::vector<cv::Point>& temp_contour, std::vector<int> temp_size, const cv::Mat& targ_img, std::vector<cv::Point2i> rect, double threshold, int distance_thresh) {
+    auto start = std::chrono::high_resolution_clock::now();
+    int width = temp_size[0] - 1, height = temp_size[1] - 1;
+    std::vector<cv::Point2f> src = { cv::Point2f(0, 0), cv::Point2f(width, 0), cv::Point2f(0, height) };
+    std::vector<cv::Point2f> dst = { cv::Point2f(rect[0]), cv::Point2f(rect[1]), cv::Point2f(rect[3]) };
+    cv::Mat convert_mat = cv::getAffineTransform(src, dst);
+
+    // Convert coor of template contour:
+    std::vector<cv::Point> converted_temp_contour;
+    for (const cv::Point& point : temp_contour) {
+        converted_temp_contour.push_back(cv::Point2f(convert_coor(point, convert_mat)));
+    }
+
+    // Divide bin:
+    int patch_size = 2 * distance_thresh;
+    std::vector<cv::Point> targ_contour = extract_contour(targ_img, threshold);
+    std::map < std::pair<int, int>, std::vector<int> > temp_bin = devide_bin(converted_temp_contour, patch_size),
+        targ_bin = devide_bin(targ_contour, patch_size);
+   
+    //Calculate distance and give defect position
+    std::vector<errorPoint> targ_output, temp_output;
+
+    // Calculate distance from target contour to template contour
+    for (const cv::Point& point : targ_contour) {
+        int x = point.x / patch_size, y = point.y / patch_size;   // Lẩy chỉ số của bin chứa điểm đang xét
+        int k1 = (point.x % patch_size >= distance_thresh) ? 1 : -1, k2 = (point.y % patch_size >= distance_thresh) ? 1 : -1; // Lấy chỉ số của 3 bin lân cận cần xét
+
+        std::vector<std::pair<int, int>> key_vec{ {x, y}, {x + k1, y}, {x, y + k2}, {x + k1, y + k2} };
+        // Tạo list gồm các index trong các bin
+        std::vector<int> idx_list;
+        for (const auto& k : key_vec) {
+            if (temp_bin.count(k) > 0) {
+                idx_list.insert(idx_list.end(), temp_bin[k].begin(), temp_bin[k].end());
+            }
+        }
+
+        errorPoint ER;
+        if (idx_list.size() != 0) {     // Nếu list không rỗng, ta tính toán với các điểm trong list
+            double min_distance = std::numeric_limits<double>::max();
+            
+            for (const auto& idx : idx_list) {
+                double distance = std::abs(converted_temp_contour[idx].x - point.x) + std::abs(converted_temp_contour[idx].y - point.y);
+                min_distance = std::min(min_distance, distance);
+            }
+            if (min_distance > distance_thresh) {
+                ER.point = point;
+                ER.distance = min_distance;
+                targ_output.push_back( ER );
+            }
+        }
+        else {        // Nếu list rỗng, ta đưa mức khoảng cách về ngưỡng lỗi
+            ER.point = point;
+            ER.distance = distance_thresh + 1;
+            targ_output.push_back( ER );
+        }
+    }
+
+    // Calculate distance from coverted template contour to target contour
+    for (const cv::Point& point : converted_temp_contour) {
+        int x = point.x / patch_size, y = point.y / patch_size;
+        int k1 = (point.x % patch_size >= distance_thresh) ? 1 : -1, k2 = (point.y % patch_size >= distance_thresh) ? 1 : -1;
+
+        std::vector<std::pair<int, int>> key_vec{ {x, y}, {x + k1, y}, {x, y + k2}, {x + k1, y + k2} };
+        std::vector<int> idx_list;
+        for (const auto& k : key_vec) {
+            if (targ_bin.count(k) > 0) {
+                idx_list.insert(idx_list.end(), targ_bin[k].begin(), targ_bin[k].end());
+            }
+        }
+
+        errorPoint ER;
+        if (idx_list.size() != 0) {
+            double min_distance = std::numeric_limits<double>::max();
+            for (const auto& idx : idx_list) {
+                double distance = std::abs(targ_contour[idx].x - point.x) + std::abs(targ_contour[idx].y - point.y);
+                min_distance = std::min(min_distance, distance);
+            }
+            if (min_distance > distance_thresh) {
+                ER.point = point;
+                ER.distance = min_distance;
+                targ_output.push_back(ER);
+            }
+        }
+        else {        // Nếu list rỗng, ta đưa mức khoảng cách về ngưỡng lỗi
+            ER.point = point;
+            ER.distance = distance_thresh + 1;
+            targ_output.push_back(ER);
+        }
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+    std::cout << elapsed.count() << std::endl;
+
+    return { targ_output, temp_output };    
+}*/

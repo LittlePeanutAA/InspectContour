@@ -18,10 +18,69 @@
 
 namespace fs = std::filesystem;
 
+std::pair < std::vector < int >, double >
+makeROI(const cv::Mat& temp_img, const cv::Mat& targ_img) {
+    cv::Ptr<cv::SiftFeatureDetector> detector;
+    detector = cv::SiftFeatureDetector::create();
+    std::vector<cv::KeyPoint> keypoints_temp, keypoints_targ;
+    cv::Mat descriptors_temp, descriptors_targ;
+    cv::BFMatcher bf;
 
+    detector->detectAndCompute(temp_img, cv::noArray(), keypoints_temp, descriptors_temp);
+    detector->detectAndCompute(targ_img, cv::noArray(), keypoints_targ, descriptors_targ);
+
+    std::vector<std::vector<cv::DMatch>> knn_matches;
+    bf.knnMatch(descriptors_temp, descriptors_targ, knn_matches, 2);
+    std::vector<cv::DMatch> good_matches;
+    for (const auto& match_pair : knn_matches) {
+        if (match_pair[0].distance < 0.75 * match_pair[1].distance) {
+            good_matches.push_back(match_pair[0]);
+        }
+    }
+    std::vector<cv::Point2f> points_temp, points_targ;
+    for (const auto& m : good_matches) {
+        points_temp.push_back(keypoints_temp[m.queryIdx].pt);
+        points_targ.push_back(keypoints_targ[m.trainIdx].pt);
+    }
+
+    // Ước lượng phép biến đổi Affine
+    cv::Mat M = cv::estimateAffinePartial2D(points_temp, points_targ);
+    // Trích xuất các giá trị dịch chuyển và góc xoay
+    int Dx = round( M.at<double>(0, 2) ); //truc 0x
+    int Dy = round( M.at<double>(1, 2) ); //truc Oy
+    double Dr = std::atan(M.at<double>(1, 0) / M.at<double>(0, 0));
+    if ( cos(Dr) == M.at<double>(0, 0) ) { Dr = Dr * 180 / CV_PI; }
+    else {Dr = 180 + Dr * 180 / CV_PI;}
+
+    std::vector<int> rect{ Dx, Dy };
+    return { rect, Dr };
+}
+
+std::vector<cv::Point2i> 
+get4POint(int x, int y, int w, int h, double angle) {
+    std::vector<cv::Point2i> vts{
+            Point2i(x, y),
+            Point2i(x + w, y),
+            Point2i(x + w, y + h),
+            Point2i(x, y + h)
+    };
+    if (angle == 0) { return vts; };
+    double angle_rad = angle * CV_PI / 180;
+    double alpha_w = std::atan(w*1.0 / h);
+    double alpha_h = std::atan(h*1.0 / w);
+    double half_cross = sqrt(w * w + h * h) / 2;
+    cv::Point2f center = cv::Point2f( x + half_cross * sin(alpha_w - angle_rad), y + half_cross * cos(alpha_w - angle_rad) );
+    vts[1] = cv::Point2i(round(center.x + half_cross * cos(alpha_h - angle_rad)), round(center.y - half_cross * sin(alpha_h - angle_rad)) );
+    vts[2] = cv::Point2i(round(2 * center.x - vts[0].x) , round(2 * center.y - vts[0].y) );
+    vts[3] = cv::Point2i(round(2 * center.x - vts[1].x) , round(2 * center.y - vts[1].y) );
+    return vts;
+}
+
+ 
 int main() {
     double threshold = 215;
     int distance_thresh = 15;
+    //double min_length_contour = 100;
 
     std::string path = "C:\\Users\\Admin\\source\\repos\\InspectContour\\NG";
     //std::cout<< "Enter the path of imageset: ";
@@ -46,47 +105,35 @@ int main() {
     for (std::string name : list_image) {
         images.push_back(cv::imread(name, 0));
     };
-
-    std::cout << "Enter the index of the template image: ";
-    int idxOfTemp;
-    std::cin >> idxOfTemp;
-
     
     std::vector<cv::Point> temp_contour;
     std::map<std::pair<int, int>, std::vector<int>> temp_bin;
-    tie(temp_contour, temp_bin) = trainTemplate(images[idxOfTemp], threshold, distance_thresh);
-
-    /*
-    RectangleRoi ROI(300, 300, 200, 100, 20);
-    std::vector<cv::Point2d> rec = ROI.getVertices();
-    compareContour(temp_contour, temp_bin, images[1], rec, threshold, distance_thresh);
-    */
-
+    std::vector<int> temp_size;
+    tie( temp_contour, temp_size ) = trainTemplate(images[0], threshold);
     
     std::vector<std::vector<std::vector<cv::Point2f>>> pos_list;
-    for (size_t i = 0; i < list_image.size(); ++i) {
-        if (i != idxOfTemp) {
-            std::vector<cv::Point2f> pos_1, pos_2;
+    
+    for (size_t i = 1; i < list_image.size(); ++i) {
+        std::vector<cv::Point2f> pos_1, pos_2;
+        //RectangleRoi ROI(r[0], r[1], temp_size[0], temp_size[1], angle);
+        //std::vector<cv::Point2d> rec = ROI.getVertices();
+        std::vector < int > r;
+        double angle; 
+        tie(r, angle) = makeROI(images[0], images[i]);
+        std::vector<cv::Point2i> vts = get4POint(r[0], r[1], temp_size[0], temp_size[1], angle);
 
-            RectangleRoi ROI(300, 300, 200, 100, 20);
-            std::vector<cv::Point2d> rec = ROI.getVertices();
-            //std::vector<std::pair<cv::Point2f, double>> pos_1, pos_2;
-            //std::vector<cv::Point2d> rec = { cv::Point2d(100, 500), cv::Point2d(500, 100), cv::Point2d(900, 500), cv::Point2d(500, 900) };
-            tie(pos_1, pos_2) = compareContour(temp_contour, temp_bin, images[i], rec, threshold, distance_thresh);
-            pos_list.push_back({ pos_1, pos_2 });
-        }
+        tie(pos_1, pos_2) = compareContour(temp_contour, temp_size, images[i], vts, threshold, distance_thresh);
+        pos_list.push_back({ pos_1, pos_2 });
     }
     std::cout << "Enter: ";
     int k ;
     std::cin >> k;
-    //std::cout << pos_list[k][0] << pos_list[k][1] << "\n";
-    std::cout << pos_list[k][1] ;
+    std::cout << pos_list[k][0] << pos_list[k][1] << "\n";
 
     while (k >= 0) {
         std::cin >> k;
         std::cout << pos_list[k][0] << pos_list[k][1] << "\n";
     }
     
-
     return 0;
 };
