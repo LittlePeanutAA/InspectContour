@@ -49,7 +49,7 @@ makeROI(const cv::Mat& temp_img, const cv::Mat& targ_img) {
     int Dx = round( M.at<double>(0, 2) ); //truc 0x
     int Dy = round( M.at<double>(1, 2) ); //truc Oy
     double Dr = std::atan(M.at<double>(1, 0) / M.at<double>(0, 0));
-    if ( cos(Dr) == M.at<double>(0, 0) ) { Dr = Dr * 180 / CV_PI; }
+    if (abs( cos(Dr) - M.at<double>(0, 0) ) < 0.01) { Dr = Dr * 180 / CV_PI; }
     else {Dr = 180 + Dr * 180 / CV_PI;}
 
     std::vector<int> rect{ Dx, Dy };
@@ -78,7 +78,7 @@ get4POint(int x, int y, int w, int h, double angle) {
 
  
 int main() {
-    double threshold = 215;
+    //double threshold = 215;
     int distance_thresh = 15;
     //double min_length_contour = 100;
 
@@ -105,34 +105,55 @@ int main() {
     for (std::string name : list_image) {
         images.push_back(cv::imread(name, 0));
     };
-    
+
     std::vector<cv::Point> temp_contour;
     std::map<std::pair<int, int>, std::vector<int>> temp_bin;
     std::vector<int> temp_size;
-    tie( temp_contour, temp_size ) = trainTemplate(images[0], threshold);
+    tie( temp_contour, temp_size ) = trainTemplate(images[15]);
     
-    std::vector<std::vector<std::vector<cv::Point2f>>> pos_list;
+    std::vector<std::vector<std::vector<errorPoint>>> pos_list;
     
-    for (size_t i = 1; i < list_image.size(); ++i) {
-        std::vector<cv::Point2f> pos_1, pos_2;
+    for (size_t i = 0; i < 6 /*list_image.size()*/; ++i) {
+        std::vector<errorPoint> pos_1, pos_2;
         //RectangleRoi ROI(r[0], r[1], temp_size[0], temp_size[1], angle);
         //std::vector<cv::Point2d> rec = ROI.getVertices();
         std::vector < int > r;
         double angle; 
-        tie(r, angle) = makeROI(images[0], images[i]);
+        tie(r, angle) = makeROI(images[15], images[i]);
         std::vector<cv::Point2i> vts = get4POint(r[0], r[1], temp_size[0], temp_size[1], angle);
 
-        tie(pos_1, pos_2) = compareContour(temp_contour, temp_size, images[i], vts, threshold, distance_thresh);
+        tie(pos_1, pos_2) = compareContour(temp_contour, temp_size, images[i], vts, distance_thresh);
         pos_list.push_back({ pos_1, pos_2 });
     }
+
     std::cout << "Enter: ";
     int k ;
     std::cin >> k;
-    std::cout << pos_list[k][0] << pos_list[k][1] << "\n";
+    if (pos_list[k][0].empty() && pos_list[k][1].empty()) {
+        std::cout << "No error" << "\n";
+    }
+    else {
+        for (int i = 0; i < 2; i++) {
+            for (errorPoint er : pos_list[k][i]) {
+                std::cout << er.getPoint() << " - " << er.getDistance() << "\n";
+            }
+        }
+    }
+    //std::cout << pos_list[k][0] << pos_list[k][1] << "\n";
 
     while (k >= 0) {
         std::cin >> k;
-        std::cout << pos_list[k][0] << pos_list[k][1] << "\n";
+        if (pos_list[k][0].empty() && pos_list[k][1].empty()) {
+            std::cout << "No error" << "\n";
+        }
+        else {
+            for (int i = 0; i < 2; i++) {
+                for (errorPoint er : pos_list[k][i]) {
+                    std::cout << er.getPoint() << " - " << er.getDistance() << "\n";
+                }
+            }
+        }
+        //std::cout << pos_list[k][0] << pos_list[k][1] << "\n";
     }
     
     return 0;
