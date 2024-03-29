@@ -15,6 +15,7 @@
 
 #include "function.cpp"
 #include "ROI_Cpp/roi.cpp"
+#include "EdgesSubPix/EdgesSubPix.cpp"
 
 namespace fs = std::filesystem;
 
@@ -76,11 +77,38 @@ get4POint(int x, int y, int w, int h, double angle) {
     return vts;
 }
 
- 
-int main() {
-    //double threshold = 215;
+
+int main() {    
     int distance_thresh = 15;
     //double min_length_contour = 100;
+    int threshValue = 215, lowValue = 125, highValue = 215;
+
+    enum binaryOption { thresholdOptions_, cannyOptions_, otsuOptions_ };
+    binaryOption b_option = binaryOption(0);
+    //PreprocessImage PI(threshValue, lowValue, highValue);
+    
+    CannyOptions            cannyOption(lowValue, highValue);       // Sử dụng CannyOptions  
+    ThresholdOptions        thresholdOption(threshValue);           // Sử dụng ThresholdOptions
+    //OtsuOptions             otsuOption();                           // Sử dụng threshOtsu
+    //BaseOptions             baseOption();                           // không xử lý gì ảnh
+    ImageProcessingOptions& option = cannyOption;
+
+    switch (b_option) {
+        case thresholdOptions_:
+            ImageProcessingOptions& option = thresholdOption;
+            std::cout << "0";
+            break;
+        case cannyOptions_:
+            ImageProcessingOptions& option = cannyOption;
+            std::cout << "1";
+            break;
+        /*case otsuOptions_:
+            ImageProcessingOptions& option = otsuOption;
+            break;
+        default:
+            ImageProcessingOptions& option = baseOption;
+            break;*/
+    }
 
     std::string path = "C:\\Users\\Admin\\source\\repos\\InspectContour\\NG";
     //std::cout<< "Enter the path of imageset: ";
@@ -101,59 +129,60 @@ int main() {
         }
     }
 
+    // Read image
     std::vector<cv::Mat> images;
     for (std::string name : list_image) {
         images.push_back(cv::imread(name, 0));
     };
 
-    std::vector<cv::Point> temp_contour;
-    std::map<std::pair<int, int>, std::vector<int>> temp_bin;
-    std::vector<int> temp_size;
-    tie( temp_contour, temp_size ) = trainTemplate(images[15]);
+    // Subpixel
+    /*double alpha = 0;
+    int low = 125, high = 215;
+    std::vector<Contour> contours;
+    std::cout << "Subpixel contour: \n";
+    EdgesSubPix(images[0], alpha, low, high, contours);
+    std::cout << contours.size();
+    for (const Contour& contour : contours) {
+        std::cout << contour.points  << "\n";
+    }*/
+
+    //ImageProcessingOptions& option = thresholdOption;
+    // Train template
+    trainTemplateData trainData = trainTemplate(images[15], option);
+    std::vector<cv::Point> temp_contour = trainData.template_contour;
+    std::vector<int> temp_size = trainData.template_img_size;
     
-    std::vector<std::vector<std::vector<errorPoint>>> pos_list;
-    
-    for (size_t i = 0; i < 6 /*list_image.size()*/; ++i) {
-        std::vector<errorPoint> pos_1, pos_2;
+    //Compare contour
+    std::vector<compareContourResult> results;    
+    for (size_t i = 0; i < list_image.size(); ++i) {
         //RectangleRoi ROI(r[0], r[1], temp_size[0], temp_size[1], angle);
         //std::vector<cv::Point2d> rec = ROI.getVertices();
-        std::vector < int > r;
+        std::vector<int> r;
         double angle; 
         tie(r, angle) = makeROI(images[15], images[i]);
         std::vector<cv::Point2i> vts = get4POint(r[0], r[1], temp_size[0], temp_size[1], angle);
 
-        tie(pos_1, pos_2) = compareContour(temp_contour, temp_size, images[i], vts, distance_thresh);
-        pos_list.push_back({ pos_1, pos_2 });
+        compareContourResult result = compareContour(temp_contour, temp_size, images[i], vts, distance_thresh, option);
+        results.push_back(result);
     }
 
-    std::cout << "Enter: ";
-    int k ;
-    std::cin >> k;
-    if (pos_list[k][0].empty() && pos_list[k][1].empty()) {
-        std::cout << "No error" << "\n";
-    }
-    else {
-        for (int i = 0; i < 2; i++) {
-            for (errorPoint er : pos_list[k][i]) {
-                std::cout << er.getPoint() << " - " << er.getDistance() << "\n";
-            }
-        }
-    }
-    //std::cout << pos_list[k][0] << pos_list[k][1] << "\n";
-
+    // Print results
+    int k = 0;
     while (k >= 0) {
+        std::cout << "Enter: ";
         std::cin >> k;
-        if (pos_list[k][0].empty() && pos_list[k][1].empty()) {
+        std::vector<errorPoint> temp_pos = results[k].errorPoint_in_convertedTempContour, targ_pos = results[k].errorPoint_in_targetContour;
+        if (temp_pos.empty() && targ_pos.empty()) {
             std::cout << "No error" << "\n";
         }
         else {
-            for (int i = 0; i < 2; i++) {
-                for (errorPoint er : pos_list[k][i]) {
-                    std::cout << er.getPoint() << " - " << er.getDistance() << "\n";
-                }
+            for (errorPoint er : temp_pos) {
+                std::cout << er.point << " - " << er.distance << "\n";
+            }
+            for (errorPoint er : targ_pos) {
+                std::cout << er.point << " - " << er.distance << "\n";
             }
         }
-        //std::cout << pos_list[k][0] << pos_list[k][1] << "\n";
     }
     
     return 0;
