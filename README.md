@@ -15,4 +15,6 @@ có khoảng cách so với mẫu lớn thì được xác định là lỗi.
 
 Để tăng độ chính xác, thuật toán subpixel được sử dụng. Khi đó, các điểm ảnh không còn là điểm nguyên nữa. Đường contour và khoảng cách của chúng sẽ được tính toán ở độ chính xác thập phân.
 
+![](img.jpg)
+
 ### Lưu ý: Bởi vì tính bảo mật, cho nên file InspectContour.cpp đã bị xoá các phần chương trình chính.
