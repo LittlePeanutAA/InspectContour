@@ -1,6 +1,6 @@
 # Inspect Contour
 
-Mục tiêu là sử dụng xử lý ảnh truyền thống để xác định được lỗi hình dạng 2D của một số loại sản phẩm công nghiệp có hình dáng không quá phức tạp.
+Mục tiêu là sử dụng xử lý ảnh truyền thống để xác định được lỗi hình dạng 2D của một số loại sản phẩm công nghiệp có hình dáng không quá phức tạp. Chủ yếu sử dụng thư viện OpenCV.
 
 ## Trích xuất contour
 Contour là một đặc trưng cực kỳ hữu ích đối với các ứng dụng liên quan đến hình dạng vật thể. Để trích xuất được contour chỉ bao gồm các đường biên hình dạng của vật thể,
